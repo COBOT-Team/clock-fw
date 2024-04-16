@@ -6,9 +6,9 @@
 //                                                                                                //
 
 const int PAUSE_PIN = 7;
-const int LIM_PIN[] = {A4, A5};
+const int LIM_PIN[] = {A5, A4};
 
-TM1637Display displays[] = {TM1637Display(A1, A3), TM1637Display(A0, A2)};
+TM1637Display displays[] = {TM1637Display(A3, A2), TM1637Display(A1, A0)};
 
 //                                                                                                //
 // ========================================= Constants ========================================== //
@@ -20,7 +20,7 @@ enum Color {
 };
 
 const unsigned long BLINK_INTERVAL = 500;
-const unsigned long SERIAL_REPORT_INTERVAL = 100;
+const unsigned long SERIAL_REPORT_INTERVAL = 1000;
 
 //                                                                                                //
 // ========================================= Game State ========================================= //
@@ -31,6 +31,8 @@ unsigned long last_time_update = 0;
 Color current = WHITE;
 
 bool button_states[2] = {false, false};
+bool pause_was_pressed = false;
+unsigned long paused_time = 0;
 
 unsigned long last_serial_report = 0;
 
@@ -65,6 +67,7 @@ void update_time(unsigned long current_time) {
     }
 
     unsigned long elapsed = current_time - last_time_update;
+    last_time_update = current_time;
     if (elapsed > time_left[current]) {
         time_left[current] = 0;
         game_running = false;
@@ -146,13 +149,15 @@ void update_button_states() {
  */
 void handle_command(String command, unsigned long current_time) {
     if (command.startsWith("rst")) {
-        unsigned long white_time, black_time;
-        int res = sscanf(command.c_str(), "rst %lu %lu", &white_time, &black_time);
+        unsigned long base, inc;
+        int res = sscanf(command.c_str(), "rst %lu %lu", &base, &inc);
         switch (res) {
             case 2:
-                time_left[WHITE] = white_time;
-                time_left[BLACK] = black_time;
+                time_left[WHITE] = base;
+                time_left[BLACK] = base;
+                time_increment = inc;
                 current = WHITE;
+                game_running = true;
                 Serial.println("ack");
                 send_serial_update(current_time);
                 return;
@@ -211,7 +216,7 @@ void setup() {
     pinMode(LIM_PIN[BLACK], INPUT_PULLUP);
 
     for (auto& display : displays) {
-        display.setBrightness(0x0f);
+        display.setBrightness(1);
         display.clear();
     }
 }
@@ -233,18 +238,25 @@ void loop() {
     }
 
     // Check for button presses.
-    if (digitalRead(PAUSE_PIN) == LOW) {
-        paused = !paused;
-        send_serial_update(current_time);
-        delay(50);
-        return;
+    bool pause_pressed = digitalRead(PAUSE_PIN) == LOW;
+    if (game_running && current_time - paused_time > 200) {
+        if (pause_pressed) {
+            if (!pause_was_pressed) {
+                pause_was_pressed = true;
+                paused = !paused;
+                paused_time = current_time;
+                send_serial_update(current_time);
+                return;
+            }
+        } else
+            pause_was_pressed = false;
     }
     update_button_states();
     if (button_states[current]) {
         time_left[current] += time_increment;
         current = (Color)(1 - current);
         send_serial_update(current_time);
-        delay(50);
+        delay(100);
         return;
     }
 
@@ -261,5 +273,6 @@ void loop() {
     if (current_time - last_serial_report >= SERIAL_REPORT_INTERVAL) {
         send_button_update();
         send_serial_update(current_time);
+        display_time();
     }
 }
