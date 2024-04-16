@@ -214,6 +214,7 @@ void loop() {
         return;
     }
     if (digitalRead(LIM_PIN[current]) == LOW) {
+        time_left[current] += time_increment;
         current = (Color)(1 - current);
         send_serial_update(current_time);
         delay(50);
