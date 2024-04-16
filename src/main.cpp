@@ -26,9 +26,11 @@ const unsigned long SERIAL_REPORT_INTERVAL = 100;
 // ========================================= Game State ========================================= //
 //                                                                                                //
 
-unsigned long time_left[2] = {0};
+unsigned long time_left[2] = {0, 0};
 unsigned long last_time_update = 0;
 Color current = WHITE;
+
+bool button_states[2] = {false, false};
 
 unsigned long last_serial_report = 0;
 
@@ -110,6 +112,30 @@ void send_serial_update(unsigned long current_time) {
     Serial.print(" a ");
     Serial.print(game_running ? "true" : "false");
     Serial.println();
+}
+
+/**
+ * Send a serial update with the current button states.
+ */
+void send_button_update() {
+    Serial.print("btn w ");
+    Serial.print(button_states[WHITE] ? "true" : "false");
+    Serial.print(" b ");
+    Serial.print(button_states[BLACK] ? "true" : "false");
+    Serial.println();
+}
+
+/**
+ * Update the button states.
+ */
+void update_button_states() {
+    const bool w = digitalRead(LIM_PIN[WHITE]) == LOW;
+    const bool b = digitalRead(LIM_PIN[BLACK]) == LOW;
+    const bool updated = w != button_states[WHITE] || b != button_states[BLACK];
+
+    button_states[WHITE] = w;
+    button_states[BLACK] = b;
+    if (updated) send_button_update();
 }
 
 /**
@@ -213,7 +239,8 @@ void loop() {
         delay(50);
         return;
     }
-    if (digitalRead(LIM_PIN[current]) == LOW) {
+    update_button_states();
+    if (button_states[current]) {
         time_left[current] += time_increment;
         current = (Color)(1 - current);
         send_serial_update(current_time);
@@ -231,6 +258,8 @@ void loop() {
     }
 
     // Send regular serial updates.
-    if (current_time - last_serial_report >= SERIAL_REPORT_INTERVAL)
+    if (current_time - last_serial_report >= SERIAL_REPORT_INTERVAL) {
+        send_button_update();
         send_serial_update(current_time);
+    }
 }
